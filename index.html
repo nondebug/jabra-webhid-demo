@@ -1,0 +1,258 @@
+
+<!DOCTYPE html>
+<html>
+<head></head>
+<body>
+
+<button type="button" onclick="requestJabraDevice()">Connect</button>
+
+<h3>Outputs (host → device)</h3>
+<ul>
+<li><input type="checkbox" id="led-off-hook">LEDs / Off-Hook
+<li><input type="checkbox" id="led-mute">LEDs / Mute
+<li><input type="checkbox" id="led-ring">LEDs / Ring
+<li><input type="checkbox" id="led-hold">LEDs / Hold
+<li><input type="checkbox" id="led-microphone">LEDs / Microphone
+<li><input type="checkbox" id="ringer">Telephony / Ringer
+</ul>
+
+<button type="button" id="button-pick-up" onclick="pickUp()" disabled>Pick Up</button>
+<button type="button" id="button-ring" onclick="ring()" disabled>Ring</button>
+<button type="button" id="button-toggle-mute" onclick="toggleMute()" disabled>Toggle Mute</button>
+<button type="button" id="button-toggle-hold" onclick="toggleHold()" disabled>Toggle Hold</button>
+<button type="button" id="button-hang-up" onclick="hangUp()" disabled>Hang Up</button>
+
+<h3>Inputs (device → host)</h3>
+<ul>
+<li><input type="checkbox" id="hook-switch" disabled>Telephony / Hook Switch
+<li><input type="checkbox" id="line-busy-tone" disabled>Telephony / Line Busy Tone
+<li><input type="checkbox" id="phone-mute" disabled>Telephony / Phone Mute
+<li><input type="checkbox" id="flash" disabled>Telephony / Flash
+<li><input type="checkbox" id="redial" disabled>Telephony / Redial
+<li><input type="checkbox" id="speed-dial" disabled>Telephony / Speed Dial
+<li><input type="checkbox" id="programmable-button" disabled>Button / Programmable Button
+<li><input type="text" id="keypad-value" size="1" disabled>Telephony / Key Pad
+</ul>
+
+<div id="mylog"></div>
+
+<script type="application/javascript">
+
+var device = null;
+
+function logappend(msg) {
+  console.log(msg);
+  var mylog = document.getElementById('mylog');
+  var line = document.createElement('div');
+  line.textContent = msg;
+  mylog.appendChild(line);
+}
+
+function hexByte(d) {
+  var hex = Number(d).toString(16);
+  while (hex.length < 2)
+    hex = "0" + hex;
+  return hex;
+}
+
+function pickUp() {
+  if (!device || !device.opened) {
+    logappend('Connect first!');
+    return;
+  }
+  document.getElementById('led-off-hook').checked = true;
+  sendOutputReport();
+}
+
+function ring() {
+  if (!device || !device.opened) {
+    logappend('Connect first!');
+    return;
+  }
+  document.getElementById('led-ring').checked = true;
+  document.getElementById('ringer').checked = true;
+  sendOutputReport();
+}
+
+function toggleMute() {
+  if (!device || !device.opened) {
+    logappend('Connect first!');
+    return;
+  }
+  let element = document.getElementById('led-mute');
+  element.checked = !element.checked;
+  sendOutputReport();
+}
+
+function toggleHold() {
+  if (!device || !device.opened) {
+    logappend('Connect first!');
+    return;
+  }
+  let element = document.getElementById('led-hold');
+  element.checked = !element.checked;
+  sendOutputReport();
+}
+
+function hangUp() {
+  if (!device || !device.opened) {
+    logappend('Connect first!');
+    return;
+  }
+  document.getElementById('led-off-hook').checked = false;
+  document.getElementById('led-mute').checked = false;
+  document.getElementById('led-ring').checked = false;
+  document.getElementById('led-hold').checked = false;
+  document.getElementById('ringer').checked = false;
+  sendOutputReport();
+}
+
+function sendOutputReport() {
+  if (!device || !device.opened)
+    return;
+  let ledOffHook = document.getElementById('led-off-hook').checked;
+  let ledMute = document.getElementById('led-mute').checked;
+  let ledRing = document.getElementById('led-ring').checked;
+  let ledHold = document.getElementById('led-hold').checked;
+  let ledMicrophone = document.getElementById('led-microphone').checked;
+  let ringer = document.getElementById('ringer').checked;
+  let bits = ledOffHook |
+             (ledMute << 1) |
+             (ledRing << 2) |
+             (ledHold << 3) |
+             (ledMicrophone << 4) |
+             (ringer << 5);
+  
+  let buf = '';
+  if (ledOffHook)
+    buf += ' off-hook-led';
+  if (ledMute)
+    buf += ' mute-led';
+  if (ledRing)
+    buf += ' ring-led';
+  if (ledHold)
+    buf += ' hold-led';
+  if (ledMicrophone)
+    buf += ' microphone-led';
+  if (ringer)
+    buf += ' ringer';
+  
+  logappend('OUTPUT 02:' + buf);
+
+  // Send the report to the device.
+  device.sendReport(0x02, new Uint8Array([bits, 0x00]));
+}
+
+function onInputReport(event) {
+  let reportId = event.reportId;
+  let reportData = event.data;
+
+  let buf = '';
+  if (reportId == 0x01) {
+    if (reportData.getUint8(0) & 0x01)
+      buf += ' volume-down';
+    if (reportData.getUint8(0) & 0x02)
+      buf += ' volume-up';
+  } else if (reportId == 0x02) {
+    let hookSwitch = reportData.getUint8(0) & 0x01;
+    let lineBusyTone = reportData.getUint8(0) & 0x02;
+    let phoneMute = reportData.getUint8(0) & 0x04;
+    let flash = reportData.getUint8(0) & 0x08;
+    let redial = reportData.getUint8(0) & 0x10;
+    let speedDial = reportData.getUint8(0) & 0x20;
+    let programmableButton = reportData.getUint8(0) & 0x40;
+    let keypadValue = ((reportData.getUint8(0) & 0x80) >> 7) |
+                      ((reportData.getUint8(1) & 0x07) << 1);
+
+    document.getElementById('hook-switch').checked = hookSwitch;
+    document.getElementById('line-busy-tone').checked = lineBusyTone;
+    document.getElementById('phone-mute').checked = phoneMute;
+    document.getElementById('flash').checked = flash;
+    document.getElementById('redial').checked = redial;
+    document.getElementById('speed-dial').checked = speedDial;
+    document.getElementById('programmable-button').checked = programmableButton;
+    document.getElementById('keypad-value').value = keypadValue.toString(16);
+
+    if (hookSwitch)
+      buf += ' off-hook';
+    else
+      buf += ' on-hook';
+    if (lineBusyTone)
+      buf += ' busy';
+    if (phoneMute)
+      buf += ' mute';
+    if (flash)
+      buf += ' flash';
+    if (redial)
+      buf += ' redial';
+    if (speedDial)
+      buf += ' speed';
+    if (programmableButton)
+      buf += ' button';
+  } else if (reportId == 0x04) {
+    let vendorHookSwitch = reportData.getUint8(0) & 0x01;
+    let vendorLineBusyTone = reportData.getUint8(0) & 0x02;
+    let vendorPhoneMute = reportData.getUint8(0) & 0x04;
+    let vendorFlash = reportData.getUint8(0) & 0x08;
+    let vendorRedial = reportData.getUint8(0) & 0x10;
+    let vendorUsageFFFD = reportData.getUint8(0) & 0x20;
+    let vendorUsage50 = reportData.getUint8(0) & 0x40;
+
+    if (vendorHookSwitch)
+      buf += ' on-hook';
+    else
+      buf += ' off-hook';
+    if (vendorLineBusyTone)
+      buf += ' busy';
+    if (vendorPhoneMute)
+      buf += ' mute';
+    if (vendorFlash)
+      buf += ' flash';
+    if (vendorRedial)
+      buf += ' redial';
+    if (vendorUsageFFFD)
+      buf += ' fffd';
+    if (vendorUsage50)
+      buf += ' 50';
+  } else {
+    for (let i = 0; i < reportData.byteLength; ++i)
+      buf += ' ' + hexByte(reportData.getUint8(i));
+  }
+  logappend('INPUT ' + hexByte(reportId) + ': ' + buf);
+}
+
+async function requestJabraDevice() {
+  if (!navigator.hid) {
+    console.log('navigator.hid not defined');
+    return;
+  }
+
+  // Show a device chooser dialog. The vendor ID filter matches Jabra devices.
+  device = await navigator.hid.requestDevice({filters: [{ vendorId: 0x0b0e }]});
+  if (!device) {
+    console.log('chooser dismissed without a selection');
+    return;
+  }
+
+  // Open the device.
+  await device.open();
+  if (!device.opened) {
+    console.log('open failed');
+    return;
+  }
+  
+  // Register an input report event listener.
+  device.oninputreport = onInputReport;
+  
+  // Enable output report buttons.
+  document.getElementById('button-pick-up').disabled = false;
+  document.getElementById('button-ring').disabled = false;
+  document.getElementById('button-toggle-mute').disabled = false;
+  document.getElementById('button-toggle-hold').disabled = false;
+  document.getElementById('button-hang-up').disabled = false;
+
+  logappend('Connected to device: ' + device.productName);
+}
+</script>
+</body>
+</html>
